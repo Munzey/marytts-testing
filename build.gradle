@@ -29,6 +29,8 @@ import marytts.LocalMaryInterface;
 import marytts.datatypes.MaryDataType;
 import marytts.util.data.audio.MaryAudioUtils;
 
+import groovy.xml.*
+import groovy.util.slurpersupport.*
 
 import javax.sound.sampled.AudioInputStream;
 
@@ -44,12 +46,41 @@ def mary = new LocalMaryInterface()
 
 def cur_area = "en"
 
-// FIXME: add downloaded + unzip task
-task fromWikiToText(type: NodeTask) {
-    script = file("src/scripts/test.js")
-    args = ["$project.projectDir/test.xml"]
-    execOverrides {
-    	it.standardOutput = new FileOutputStream('log/my.log')
+task splitWiki() {
+	def pre_dir = file("$project.projectDir/data/text/$cur_area/pre")
+	if (!pre_dir.exists()) {
+		pre_dir.mkdirs()
+	}
+	def pageFiles = []
+	outputs.dir pre_dir
+	doLast {
+		// get XML from file
+        def inputXmlStr = new File("$project.projectDir/res.xml").text
+        def xml = new XmlSlurper(false, false).parseText inputXmlStr
+		
+		// process XML
+        xml.depthFirst().findAll { it.name() == 'page' }.each { page ->
+        	if (!page.revision.text.text().startsWith("#REDIRECT")) {
+        		pageFiles << page.revision.text.text()
+        	}
+        }
+        
+        //write pre-processed pages to files
+        pageFiles.eachWithIndex { page, idx ->
+        	new File(pre_dir, "page_${idx}.txt").withWriter{ it << page } 
+        }    	
+	}
+}
+
+task fromWikiToText() {
+	inputs.dir splitWiki
+    def text_dir = "./data/text"
+    outputs.files "$text_dir/$cur_area/post"
+    doLast { 
+        Wiki2Text w = new Wiki2Text(cur_area, "./data/text");    
+        inputs.dir.each { page ->
+        	w.getCleanText(page.text);
+        }
     }
 }
 

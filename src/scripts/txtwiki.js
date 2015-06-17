@@ -244,4 +244,3 @@ var txtwiki = (function(){
 	else
 		return txtwiki;
 }());
-console.log(txtwiki);

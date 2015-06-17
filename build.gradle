@@ -43,12 +43,11 @@ import javax.xml.transform.dom.DOMSource;
 def mary = new LocalMaryInterface()
 
 def cur_area = "en"
-def testWiki = new File("$project.projectDir/res.xml").text
 
 // FIXME: add downloaded + unzip task
 task fromWikiToText(type: NodeTask) {
-	script = file("src/scripts/txtwiki.js")
-    args = ["test"]
+    script = file("src/scripts/test.js")
+    args = ["$project.projectDir/test.xml"]
     execOverrides {
     	it.standardOutput = new FileOutputStream('log/my.log')
     }

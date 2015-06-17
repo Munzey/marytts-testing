@@ -1,11 +1,12 @@
 
-import java.util.regex.Pattern;
-import java.util.regex.Matcher;
-
 import java.io.*;
-import edu.jhu.nlp.wikipedia.*;
 
-public class Wiki2Text implements PageCallbackHandler {
+import info.bliki.wiki.filter.PlainTextConverter;
+import info.bliki.wiki.model.WikiModel;
+
+import org.apache.commons.io.FileUtils;
+
+public class Wiki2Text {
 
     public String root_dir;
     public int page_id;
@@ -16,24 +17,12 @@ public class Wiki2Text implements PageCallbackHandler {
         page_id = 1;
 	}
 
-    public String clean(String text) {
-        String clean_text = text.replaceAll("&nbsp;", " ");
-        clean_text = clean_text.replaceAll("^\\|.*", " ");
-        clean_text = clean_text.replaceAll("==+([^=]+)==+", "section: $1");
-        Pattern section_patt = Pattern.compile(".*?[0-9]{10}.*");
-        return clean_text;
-    }
-
-    public void process(WikiPage page)
-    {
-        String text = clean(page.getText());
-        if (text.startsWith("#REDIRECT"))
-            return;
-        
+    public void writeToFile(String wikiText)
+    {   
         try
         {
             BufferedWriter out = new BufferedWriter(new FileWriter(root_dir + "/page_" + page_id + ".txt"));
-            out.write(text);
+            out.write(wikiText);
             out.close();
         }
         catch (IOException ex)
@@ -46,20 +35,18 @@ public class Wiki2Text implements PageCallbackHandler {
         }
     }
     
-	public void extractLocale(File xml_file)
+	public void getCleanText(File xml_file)
     {
         try
         {
-            // Load the parser
-            WikiXMLParser wxsp = WikiXMLParserFactory.getSAXParser(xml_file.getPath());
-            
-            // We are the handler
-            wxsp.setPageCallback(this);
+        	WikiModel wikiModel = new WikiModel("http://www.mywiki.com/wiki/${image}", "http://www.mywiki.com/wiki/${title}");
+            String wikiText = FileUtils.readFileToString(xml_file);
+        	String plainStr = wikiModel.render(new PlainTextConverter(), wikiText);
 
-            // And we parse
-            wxsp.parse();
+            // Write to file
+            writeToFile(plainStr);
         }
-        catch(Exception e)
+        catch(IOException e)
         {
             e.printStackTrace();
         } 		

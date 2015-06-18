@@ -1,6 +1,5 @@
 apply plugin: 'java'
 apply plugin: 'eclipse'
-apply plugin: 'com.moowork.node'
 
 buildscript {
     def areas = ['de', 'en', 'fr', 'it', 'ru', 'sv', 'te', 'tr']    
@@ -18,42 +17,46 @@ buildscript {
             classpath group: 'de.dfki.mary', name: "marytts-lang-$locale", version: maryttsVersion
         }
         classpath group: 'de.dfki.mary', name: 'voice-cmu-slt-hsmm', version: maryttsVersion
-        classpath 'com.moowork.gradle:gradle-node-plugin:0.10'
     }
 }
-
 
 def areas = ['de', 'en', 'fr', 'it', 'ru', 'sv', 'te', 'tr']
 
 import marytts.LocalMaryInterface;
 import marytts.datatypes.MaryDataType;
 import marytts.util.data.audio.MaryAudioUtils;
+import marytts.util.dom.DomUtils
 
 import groovy.xml.*
 import groovy.util.slurpersupport.*
 
 import javax.sound.sampled.AudioInputStream;
 
-/* XML Exporting */
-import javax.xml.transform.TransformerFactory;
-import javax.xml.transform.Transformer;
-import javax.xml.transform.OutputKeys;
-import java.io.StringWriter;
-import javax.xml.transform.stream.StreamResult;
-import javax.xml.transform.dom.DOMSource;
-
 def mary = new LocalMaryInterface()
 
 def cur_area = "en"
 
+/***
+ * TODO
+ * wikidump links: https://dumps.wikimedia.org/backup-index-bydb.html
+ * need task to download dumps, these could be useful:
+ * https://github.com/bwbaugh/wikipedia-extractor, original: https://github.com/attardi/wikiextractor, site: http://medialab.di.unipi.it/wiki/Wikipedia_Extractor
+ * https://www.mediawiki.org/wiki/Manual:MWDumper
+ * steps 3 & 4 from here: http://www.evanjones.ca/software/wikipedia2text.html
+ *
+ *  another factor to consider is size of dumps? enwiki is usually 10GB+, perhaps take enwikisource instead? 1-2GB for english, sig. less for others
+ *  Two ideas:
+ *   1. download xywikisource instead of wiki
+ *   2. using MWDumper, we first get a list of "good articles" and filter the dump
+ *
+ ***/
+
 task splitWiki() {
 	def pre_dir = file("$project.projectDir/data/text/$cur_area/pre")
-	if (!pre_dir.exists()) {
-		pre_dir.mkdirs()
-	}
 	def pageFiles = []
-	outputs.dir pre_dir
+    outputs.files fileTree(pre_dir).include('**/*.txt').files.sort()
 	doLast {
+        pre_dir.mkdirs()
 		// get XML from file
         def inputXmlStr = new File("$project.projectDir/res.xml").text
         def xml = new XmlSlurper(false, false).parseText inputXmlStr
@@ -67,71 +70,61 @@ task splitWiki() {
         
         //write pre-processed pages to files
         pageFiles.eachWithIndex { page, idx ->
-        	new File(pre_dir, "page_${idx}.txt").withWriter{ it << page } 
+        	new File(pre_dir, "page_${idx + 1}.txt").withWriter{ it << page }
         }    	
 	}
 }
 
-task fromWikiToText() {
-	inputs.dir splitWiki
-    def text_dir = "./data/text"
-    outputs.files "$text_dir/$cur_area/post"
+task wikiToText() {
+    def post_dir = file("$project.projectDir/data/text/$cur_area/post")
+	inputs.files splitWiki.getOutputs().getFiles()
+    outputs.files fileTree(post_dir).include('**/*.txt').files.sort()
     doLast { 
         Wiki2Text w = new Wiki2Text(cur_area, "./data/text");    
-        inputs.dir.each { page ->
+        inputs.files.each {File page ->
         	w.getCleanText(page.text);
         }
     }
 }
 
 
-task fromTextToAcoustParams(dependsOn: fromWikiToText) {
-    def text_dir = new File("./data/text/$cur_area")
-    inputs.files text_dir
-    
-    def acparam_dir = new File("./data/acoust_params/$cur_area")
-    outputs.files acparam_dir
+task textToAcoustParams() {
+    inputs.files wikiToText.getOutputs().getFiles()
+    def acparam_dir = new File("$project.projectDir/data/acoust_params/$cur_area")
+    outputs.files fileTree(acparam_dir).include('**/*.xml').files.sort()
 
     doLast {
         acparam_dir.mkdirs()
         mary.setInputType("TEXT")
         mary.setOutputType("ACOUSTPARAMS")
         
-        text_dir.eachFile { file ->
+        inputs.files.each { file ->
             def basename = file.name.replaceAll("\\.txt\$", "")
-            def text = (new File("$text_dir/${basename}.txt")).text
-            def d = mary.generateXML(text)
-        
-            // FIXME: find a better way to save the XML
-            TransformerFactory tf = TransformerFactory.newInstance();
-            Transformer transformer = tf.newTransformer();
-            transformer.setOutputProperty(OutputKeys.OMIT_XML_DECLARATION, "yes");
-            StringWriter writer = new StringWriter();
-            transformer.transform(new DOMSource(d), new StreamResult(writer));
-            String output = writer.getBuffer().toString(); // #.replaceAll("\n|\r", "");
+            def d = mary.generateXML(file.text)
+            //convert from doc -> xml -> string
+            def inputXmlStr = DomUtils.serializeToString d
+            def xml = new XmlSlurper(false, false).parseText inputXmlStr
+            def outputXmlStr = new StreamingMarkupBuilder().bind { mkp.yield xml }.toString()
             
-            (new File("$acparam_dir/${basename}.xml")).text = output
+            new File("$acparam_dir/${basename}.xml").text = outputXmlStr
         }
         
     }
 }
 
-task fromAcoustParamsToWav(dependsOn: fromTextToAcoustParams){
-    def acparam_dir = new File("./data/acoust_params/$cur_area")
-    inputs.files acparam_dir
-    def wav_dir = new File("./data/acoust_params/$cur_area")
+task acoustParamsToWav(){
+    inputs.files textToAcoustParams.getOutputs().getFiles()
+    def wav_dir = new File("$project.projectDir/data/acoust_params/$cur_area")
 
     doLast {
         wav_dir.mkdirs()
         // Actual fantasy synthesis
-        mary.setOutputType("ACOUSTPARAMS")
+        mary.setInputType("ACOUSTPARAMS")
         mary.setOutputType("AUDIO")
 
-        
-        acparam_dir.eachFile { file ->
+        inputs.files.each { file ->
             def basename = file.name.replaceAll("\\.xml\$", "")
-            print("Synthesis $file.name ......")
-            System.out.flush()
+            logger.quiet("Synthesis $file.name ......")
             def xml = file.text
             AudioInputStream audio = mary.generateAudio(xml);
             
@@ -142,5 +135,5 @@ task fromAcoustParamsToWav(dependsOn: fromTextToAcoustParams){
     }
 }
 
-task run(dependsOn:fromAcoustParamsToWav) {
+task run(dependsOn:acoustParamsToWav) {
 }

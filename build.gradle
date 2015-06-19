@@ -37,6 +37,13 @@ def mary = new LocalMaryInterface()
 def cur_area = "en"
 
 /***
+ * UPDATE : use medialab Wikipedia_Extractor instead: retrieve the python script using ant, as well as the wikidumps.
+ * see: https://bitbucket.org/Tham93/marytts/src/e01215e8f8a3debf2f35538db0a48a91274ec9db/marytts-languages/marytts-lang-en/build.gradle?at=blizzard2015
+ * apply tasks to each language as a sub project
+ * for testing, we will use paramaterized tests but due to size we want to soft assert see test-lts branch:
+ * https://github.com/psibre/marytts/tree/6d25d5527168a86b803e43a041393733c5cd05a5/marytts-languages/src
+ * With this we would still see massive stacktrace output so see if there is a way to extend gradle testreport to allow just the error itself to be returned.
+ * https://docs.gradle.org/current/javadoc/org/gradle/api/tasks/testing/TestReport.html
  * TODO
  * wikidump links: https://dumps.wikimedia.org/backup-index-bydb.html
  * need task to download dumps, these could be useful:
